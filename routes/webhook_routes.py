@@ -278,9 +278,29 @@ def setup_webhook_routes(
             api_key = body.api_key.strip()
             model = body.model or "deepseek-chat"
 
-            # Resolve base_url: explicit > provider name > model prefix auto-detect
+            # Resolve base_url: explicit > provider name > model prefix auto-detect.
+            # SECURITY: an explicit body.base_url is attacker-controlled (any
+            # chat-scoped token can set it). normalize_base/build_chat_url only
+            # massage the path suffix — they do NOT validate the scheme or host.
+            # Without a gate here, a paired mobile token (the documented
+            # low-privilege scope) could coerce the server into firing
+            # llm_call_async at 169.254.169.254 (cloud-metadata creds),
+            # 127.0.0.1, RFC1918 LAN services, file://, etc., and read the
+            # response back through llm_call_async's schema-mismatch error path.
+            # Run user-supplied base_url through validate_webhook_url — the same
+            # http(s)-only + private/loopback/link-local/metadata gate (DNS
+            # resolved) that already guards webhooks and the web-fetch tool.
+            # Auto-resolved provider URLs (KNOWN_PROVIDERS) are server-defined
+            # constants and don't need this gate. Admin-configured ModelEndpoint
+            # rows (Case 3) are also intentionally exempt — they legitimately
+            # point at localhost/LAN local LLMs and are trusted admin input.
             base_url = body.base_url.strip().rstrip("/") if body.base_url else None
-            if not base_url:
+            if base_url:
+                try:
+                    validate_webhook_url(base_url)
+                except ValueError as e:
+                    raise HTTPException(400, f"Invalid base_url: {e}")
+            else:
                 base_url = _resolve_base_url(model, body.provider)
             if not base_url:
                 raise HTTPException(400,

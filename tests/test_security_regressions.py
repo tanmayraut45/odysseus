@@ -1041,3 +1041,100 @@ def test_chat_active_document_lookup_is_owner_scoped():
     assert "filter( DBDocument.id == active_doc_id, ).first()" not in flat
     assert "filter(DBDocument.id == active_doc_id).first()" not in flat
     assert "filter(DBDocument.id == _mem_id).first()" not in flat
+
+
+# ── /api/v1/chat SSRF guard on user-supplied base_url (#1039) ───────
+# POST /api/v1/chat (Case 2: api_key + base_url) accepted a body-supplied
+# base_url and only suffix-stripped it via normalize_base/build_chat_url
+# before dispatching through llm_call_async. Any chat-scoped token (the
+# low-privilege scope handed to paired mobile clients) could coerce the
+# server into requesting arbitrary internal targets — cloud metadata at
+# 169.254.169.254, loopback services, RFC1918 LAN hosts — and read the
+# upstream response back through llm_call_async's schema-mismatch error
+# path. Fix routes explicit body.base_url through validate_webhook_url,
+# the same http(s)-only-scheme + private/link-local/metadata block (DNS
+# resolved) that already guards webhooks. Admin-configured
+# ModelEndpoint.base_url (Case 3) is intentionally exempt — trusted admin
+# input that legitimately points at localhost/LAN local LLMs.
+
+
+def test_v1_chat_base_url_is_ssrf_validated():
+    """Pin that POST /api/v1/chat runs the user-supplied base_url through
+    validate_webhook_url BEFORE normalize_base / build_chat_url. A future
+    refactor that drops the guard, or moves it after the URL has already
+    been handed to build_chat_url, regresses straight back into SSRF."""
+    import re
+
+    src = Path(__file__).resolve().parents[1] / "routes" / "webhook_routes.py"
+    text = src.read_text()
+    # validate_webhook_url is imported from src.webhook_manager — the
+    # webhook-trigger path already uses it; sync_chat must too.
+    assert "from src.webhook_manager import" in text
+    assert "validate_webhook_url" in text
+    # The guard is applied to the body-supplied base_url. Match the
+    # call as it appears in Case 2, whitespace-insensitively.
+    flat = re.sub(r"\s+", " ", text)
+    assert "validate_webhook_url(base_url)" in flat
+    # And the guard runs BEFORE normalize_base / build_chat_url so the
+    # URL is rejected before any dispatch helper touches it.
+    guard_pos = flat.find("validate_webhook_url(base_url)")
+    norm_pos = flat.find("normalize_base(base_url)")
+    chat_url_pos = flat.find("build_chat_url(base_url)")
+    assert guard_pos != -1 and norm_pos != -1 and chat_url_pos != -1
+    assert guard_pos < norm_pos < chat_url_pos
+
+
+def _import_webhook_manager_for_test():
+    """Import src.webhook_manager under the conftest's stubbed src.database.
+    The module does `from src.database import SessionLocal, Webhook`; the
+    conftest stub provides SessionLocal but not Webhook, so add it."""
+    from unittest.mock import MagicMock as _Mock
+    if not hasattr(sys.modules["src.database"], "Webhook"):
+        sys.modules["src.database"].Webhook = _Mock()
+    import importlib
+    if "src.webhook_manager" in sys.modules:
+        return importlib.import_module("src.webhook_manager")
+    return importlib.import_module("src.webhook_manager")
+
+
+@pytest.mark.parametrize("url", [
+    "http://169.254.169.254/latest/meta-data/iam/security-credentials",  # AWS metadata
+    "http://metadata.google.internal/computeMetadata/v1/",               # GCP metadata
+    "http://127.0.0.1:8000/",                                            # loopback
+    "http://localhost/",                                                  # loopback by name
+    "http://10.0.0.5/",                                                  # RFC1918 10/8
+    "http://172.16.0.1/",                                                # RFC1918 172.16/12
+    "http://192.168.1.1/",                                               # RFC1918 192.168/16
+    "http://0.0.0.0/",                                                   # unspecified
+    "http://[::1]/",                                                     # IPv6 loopback
+    "http://[fe80::1]/",                                                 # IPv6 link-local
+    "file:///etc/passwd",                                                # non-http scheme
+    "gopher://example.com/",                                             # non-http scheme
+])
+def test_v1_chat_validate_guard_rejects_metadata_and_schemes(url):
+    """validate_webhook_url is the gate sync_chat now applies to body.base_url.
+    Pin its reject set for the exact SSRF targets called out in the report so
+    a regression in the underlying validator surfaces here too, not just in
+    the webhook tests."""
+    wm = _import_webhook_manager_for_test()
+    with pytest.raises(ValueError):
+        wm.validate_webhook_url(url)
+
+
+def test_v1_chat_validate_guard_accepts_legitimate_provider_url(monkeypatch):
+    """A normal public provider URL must still validate — the gate exists to
+    block SSRF, not to break legitimate cross-host API calls. Stub the DNS
+    resolver so the test does not depend on actually reaching the provider."""
+    import ipaddress as _ipa
+    wm = _import_webhook_manager_for_test()
+    # Force DNS to a known public IP so the test does not depend on outbound
+    # network and never trips the fail-closed empty-resolution path.
+    monkeypatch.setattr(
+        wm,
+        "_resolve_hostname_ips",
+        lambda host: [_ipa.ip_address("93.184.216.34")],
+    )
+    # api.deepseek.com is one of the documented provider examples in the
+    # handler's own error message; reject it and the endpoint is unusable.
+    wm.validate_webhook_url("https://api.deepseek.com/v1")
+    wm.validate_webhook_url("https://api.openai.com/v1")
