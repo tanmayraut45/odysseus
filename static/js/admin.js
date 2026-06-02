@@ -2004,6 +2004,71 @@ function initBackup() {
   });
 }
 
+/* ── App Logs viewer ── */
+function _fmtBytes(n) {
+  if (!Number.isFinite(n) || n <= 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  let i = 0; let v = n;
+  while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+  return `${v.toFixed(v >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+async function loadAppLogs() {
+  const view = el('adm-logsView');
+  const meta = el('adm-logsMeta');
+  if (!view) return;
+  const lines = el('adm-logsLines')?.value || '500';
+  const level = el('adm-logsLevel')?.value || '';
+  view.textContent = 'Loading...';
+  if (meta) meta.textContent = '';
+  try {
+    const qs = new URLSearchParams({ lines });
+    if (level) qs.set('level', level);
+    const res = await fetch(`/api/admin/logs?${qs.toString()}`, { credentials: 'same-origin' });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      view.textContent = data.detail || `Failed to load logs (HTTP ${res.status})`;
+      return;
+    }
+    const data = await res.json();
+    if (!data.exists) {
+      view.textContent = 'Log file does not exist yet — nothing has been written to logs/odysseus.log.';
+    } else if (!Array.isArray(data.lines) || data.lines.length === 0) {
+      view.textContent = level ? `No lines at level ${level} or above.` : 'Log file is empty.';
+    } else {
+      view.textContent = data.lines.join('\n');
+      // Auto-scroll to the freshest line — what an operator wants by default.
+      view.scrollTop = view.scrollHeight;
+    }
+    if (meta) {
+      const parts = [];
+      parts.push(`${data.lines?.length ?? 0} lines`);
+      parts.push(_fmtBytes(data.file_size || 0));
+      if (data.truncated) parts.push('truncated');
+      meta.textContent = parts.join(' · ');
+    }
+  } catch (e) {
+    view.textContent = 'Request failed: ' + e.message;
+  }
+}
+
+function initAppLogs() {
+  const refresh = el('adm-logsRefresh');
+  if (!refresh) return;
+  refresh.addEventListener('click', loadAppLogs);
+  el('adm-logsLines')?.addEventListener('change', loadAppLogs);
+  el('adm-logsLevel')?.addEventListener('change', loadAppLogs);
+
+  // Lazy-load on first visit to the tab so opening Settings doesn't always
+  // tail the log file.
+  modalEl.querySelector('[data-settings-tab="applogs"]')?.addEventListener('click', () => {
+    if (!modalEl.dataset.applogsLoaded) {
+      modalEl.dataset.applogsLoaded = '1';
+      loadAppLogs();
+    }
+  });
+}
+
 /* ── Danger Zone ── */
 function initDangerZone() {
   // Per-category Danger Zone wipes. Each button declares its target
@@ -2044,7 +2109,7 @@ function initDangerZone() {
    ═══════════════════════════════════════════ */
 function initAll() {
   modalEl = el('settings-modal');
-  const inits = [initSignupToggle, initAddUser, initEndpointForm, initMcpForm, initCalDAV, initBackup, initDangerZone, () => settingsModule.initIntegrations()];
+  const inits = [initSignupToggle, initAddUser, initEndpointForm, initMcpForm, initCalDAV, initBackup, initDangerZone, initAppLogs, () => settingsModule.initIntegrations()];
   for (const fn of inits) {
     try { fn(); } catch (e) { console.error('Admin init error in', fn.name || 'anonymous', e); }
   }

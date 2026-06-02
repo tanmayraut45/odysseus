@@ -1370,6 +1370,10 @@
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
             <span>System</span>
           </button>
+          <button class="settings-nav-item admin-only" data-settings-tab="applogs">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>
+            <span>App Logs</span>
+          </button>
         </div>
         <div class="settings-panels">
 
@@ -2216,6 +2220,37 @@
             </div>
 
             <div id="adm-wipeMsg" style="margin-top:8px;"></div>
+          </div>
+        </div>
+
+        <!-- ═══ APP LOGS TAB ═══ -->
+        <div data-settings-panel="applogs" class="hidden">
+          <div class="admin-card">
+            <h2><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:5px;opacity:0.6"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="8" y1="9" x2="10" y2="9"/></svg>App Logs</h2>
+            <div class="admin-toggle-sub" style="margin-bottom:8px">Tail of the running app log (logs/odysseus.log). Useful for debugging Docker installs without shelling in.</div>
+            <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px;">
+              <label class="settings-label" style="margin:0;">Lines</label>
+              <select id="adm-logsLines" class="settings-select" style="width:auto;">
+                <option value="100">100</option>
+                <option value="500" selected>500</option>
+                <option value="1000">1000</option>
+                <option value="2500">2500</option>
+                <option value="5000">5000</option>
+              </select>
+              <label class="settings-label" style="margin:0;">Level</label>
+              <select id="adm-logsLevel" class="settings-select" style="width:auto;">
+                <option value="">All</option>
+                <option value="DEBUG">DEBUG+</option>
+                <option value="INFO">INFO+</option>
+                <option value="WARNING">WARNING+</option>
+                <option value="ERROR">ERROR+</option>
+                <option value="CRITICAL">CRITICAL</option>
+              </select>
+              <button class="admin-btn-sm" id="adm-logsRefresh">Refresh</button>
+              <a class="admin-btn-sm" id="adm-logsDownload" href="/api/admin/logs/download" download>Download</a>
+              <span id="adm-logsMeta" class="admin-toggle-sub" style="margin-left:auto;"></span>
+            </div>
+            <pre id="adm-logsView" style="background:var(--panel);border:1px solid var(--border);border-radius:6px;padding:10px;max-height:60vh;overflow:auto;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;white-space:pre-wrap;word-break:break-word;margin:0;"></pre>
           </div>
         </div>
 

@@ -67,10 +67,12 @@ from src.app_helpers import abs_join
 from starlette.responses import RedirectResponse
 
 # ========= LOGGING =========
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-)
+# Install stdout + rotating-file handlers via the shared helper so the admin
+# "App Logs" viewer (routes/admin_logs_routes.py) and `docker compose logs`
+# both have something to read. File handler lands at logs/odysseus.log, which
+# the default docker-compose bind-mounts to ./logs on the host.
+from core.log_config import configure_logging
+configure_logging(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # ========= APP =========
@@ -530,6 +532,9 @@ app.include_router(setup_session_routes(session_manager, session_config, webhook
 # Admin Danger Zone wipes (Settings → System → Danger Zone)
 from routes.admin_wipe_routes import setup_admin_wipe_routes
 app.include_router(setup_admin_wipe_routes(session_manager))
+
+from routes.admin_logs_routes import setup_admin_logs_routes
+app.include_router(setup_admin_logs_routes())
 
 # Memory
 from routes.memory_routes import setup_memory_routes
