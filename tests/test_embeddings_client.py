@@ -93,3 +93,30 @@ def test_embedding_retry_path_preserves_api_key_header():
 
     assert vecs.tolist() == [[1.0, 0.0]]
     assert seen_headers == [{"Authorization": "Bearer secret-key"}]
+
+
+def test_encode_raises_clear_error_on_missing_embedding_field():
+    client = EmbeddingClient(url="http://embed.test/v1/embeddings", model="all-minilm")
+    client._client = _FakeEmbeddingHttpClient(
+        lambda _: (200, {"data": [{"index": 0}]})  # missing 'embedding' key
+    )
+
+    with pytest.raises(ValueError) as excinfo:
+        client.encode(["hello"])
+
+    msg = str(excinfo.value)
+    assert "embedding" in msg
+    assert "http://embed.test/v1/embeddings" in msg
+    assert "all-minilm" in msg
+
+
+def test_encode_valid_response_returns_vectors():
+    client = EmbeddingClient(url="http://embed.test/v1/embeddings", model="all-minilm")
+    client._client = _FakeEmbeddingHttpClient(
+        lambda _: (200, {"data": [{"embedding": [3.0, 4.0], "index": 0}]})
+    )
+
+    out = client.encode(["hello"], normalize_embeddings=False)
+
+    assert out.shape == (1, 2)
+    assert out.tolist() == [[3.0, 4.0]]

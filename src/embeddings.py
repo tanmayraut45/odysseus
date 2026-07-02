@@ -126,7 +126,17 @@ class EmbeddingClient:
         # OpenAI format: {"data": [{"embedding": [...], "index": 0}, ...]}
         embeddings = data.get("data", [])
         embeddings.sort(key=lambda e: e.get("index", 0))
-        return [emb["embedding"] for emb in embeddings]
+        result = []
+        for emb in embeddings:
+            vec = emb.get("embedding") if isinstance(emb, dict) else None
+            if vec is None:
+                raise ValueError(
+                    f"Malformed embedding response from {self.url} "
+                    f"(model={self.model}): expected 'embedding' field, got "
+                    f"keys {sorted(emb) if isinstance(emb, dict) else type(emb).__name__!r}"
+                )
+            result.append(vec)
+        return result
 
 
 class FastEmbedClient:
