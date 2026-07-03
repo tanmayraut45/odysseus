@@ -93,3 +93,55 @@ def test_embedding_retry_path_preserves_api_key_header():
 
     assert vecs.tolist() == [[1.0, 0.0]]
     assert seen_headers == [{"Authorization": "Bearer secret-key"}]
+
+
+def test_embedding_client_close_closes_http_client():
+    import unittest.mock as mock
+    client = EmbeddingClient(url="http://embed.test", model="m")
+    fake_http = mock.MagicMock()
+    client._client = fake_http
+
+    client.close()
+
+    fake_http.close.assert_called_once()
+
+
+def test_embedding_client_context_manager_closes_on_exit():
+    import unittest.mock as mock
+    fake_http = mock.MagicMock()
+    with EmbeddingClient(url="http://embed.test", model="m") as c:
+        c._client = fake_http
+    fake_http.close.assert_called_once()
+
+
+def test_factory_closes_probe_client_when_endpoint_down(monkeypatch):
+    import src.embeddings as emb_mod
+    emb_mod.reset_http_embed_state()
+
+    created = []
+
+    class _FailingProbe:
+        def __init__(self, **kwargs):
+            self.url = kwargs.get("url", "http://embed.test")
+            self.model = kwargs.get("model", "m")
+            self._client = None
+            created.append(self)
+            self._closed = False
+
+        def get_sentence_embedding_dimension(self):
+            raise RuntimeError("connection refused")
+
+        def close(self):
+            self._closed = True
+
+    def _no_fastembed(*a, **k):
+        raise ImportError("fastembed not installed")
+
+    monkeypatch.setattr(emb_mod, "EmbeddingClient", _FailingProbe)
+    monkeypatch.setattr(emb_mod, "FastEmbedClient", _no_fastembed)
+    monkeypatch.setattr(emb_mod, "_load_persisted_endpoint", lambda: {})
+
+    result = emb_mod.get_embedding_client()
+
+    assert result is None
+    assert created and created[0]._closed is True
