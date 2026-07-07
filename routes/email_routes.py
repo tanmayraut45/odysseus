@@ -3247,6 +3247,8 @@ def setup_email_routes():
             _attach_compose_uploads(outer, attachments)
 
         recipients = _envelope_recipients(to, cc, bcc)
+        if not recipients:
+            raise HTTPException(422, "No valid recipient address")
 
         _send_smtp_message(cfg, cfg["from_address"], recipients, outer.as_string())
 
@@ -3257,6 +3259,10 @@ def setup_email_routes():
         """Schedule an email to be sent at a specific time. ISO8601 UTC."""
         import sqlite3
         import uuid as _uuid
+        # Guard: reject blank/separator-only recipient lists before writing to
+        # the queue — an empty list would cause an SMTP error at delivery time.
+        if not _envelope_recipients(req.get("to") or "", req.get("cc"), req.get("bcc")):
+            raise HTTPException(422, "No valid recipient address")
         try:
             send_at = req.get("send_at")
             if not send_at:
@@ -3538,6 +3544,8 @@ def setup_email_routes():
         # Build recipient list (parse the address grammar so display names with
         # commas don't get split into broken envelope addresses)
         recipients = _envelope_recipients(req.to, req.cc, req.bcc)
+        if not recipients:
+            raise HTTPException(422, "No valid recipient address")
 
         # Serialize what the background task needs so the request object can be GC'd
         outer_bytes = outer.as_bytes()
